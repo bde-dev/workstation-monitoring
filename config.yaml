@@ -1,0 +1,107 @@
+# Workstation OTel collector — stateless. Captures host metrics + kernel logs and
+# ships them OTLP/HTTP to the management-cluster gateway through the Cloudflare
+# tunnel. The single /host:ro mount serves both hostmetrics (root_path) and the
+# journald chroot (the host's own journalctl), so this config is portable across
+# Linux bases with no per-distro changes.
+
+extensions:
+  health_check:
+    endpoint: 0.0.0.0:13133
+
+receivers:
+  hostmetrics:
+    root_path: /host
+    collection_interval: 30s
+    scrapers:
+      cpu: {}
+      load: {}
+      # limit + utilization: real MemTotal and exact used-fraction. Summing the six
+      # state series overshoots physical RAM (slab double-counts against cached),
+      # so dashboards must never derive total/percent by adding states.
+      memory:
+        metrics:
+          system.memory.limit:
+            enabled: true
+          system.memory.utilization:
+            enabled: true
+      disk: {}
+      filesystem: {}
+      network: {}
+      paging: {}
+      processes: {}
+      # Per-process CPU/memory/disk feeding the dashboard top-N panels. Mute flags:
+      # walking /host proc hits unreadable exe/user/io on kernel threads and other
+      # users' processes, which would otherwise spam the collector log every cycle.
+      process:
+        mute_process_name_error: true
+        mute_process_exe_error: true
+        mute_process_user_error: true
+        mute_process_io_error: true
+
+  docker_stats:
+    endpoint: unix:///var/run/docker.sock
+    collection_interval: 30s
+
+  # Kernel (dmesg) logs only. Runs the HOST's journalctl via chroot (root_path), so
+  # the journalctl version always matches the running distro — no rebuild on a base
+  # swap. Requires persistent journald on the host (see README).
+  journald:
+    root_path: /host
+    journalctl_path: /usr/bin/journalctl
+    directory: /var/log/journal
+    dmesg: true
+    priority: info
+    start_at: end
+
+processors:
+  resourcedetection:
+    detectors: [env, system]
+    system:
+      hostname_sources: [os]
+    override: false
+
+  resource:
+    attributes:
+      - key: source
+        value: workstation
+        action: insert
+      - key: workstation
+        value: ${env:WORKSTATION_NAME}
+        action: upsert
+      # Gives logs a clean Loki stream label (service_name=workstation-<name>)
+      # instead of the catch-all unknown_service.
+      - key: service.name
+        value: workstation-${env:WORKSTATION_NAME}
+        action: upsert
+
+  # Keep batches well under Cloudflare's 100MB edge body cap; gzip on the exporter
+  # compresses the wire further.
+  batch:
+    send_batch_size: 8192
+    send_batch_max_size: 16384
+    timeout: 5s
+
+exporters:
+  otlphttp:
+    endpoint: ${env:OTEL_ENDPOINT}
+    compression: gzip
+    headers:
+      CF-Access-Client-Id: ${env:CF_ACCESS_CLIENT_ID}
+      CF-Access-Client-Secret: ${env:CF_ACCESS_CLIENT_SECRET}
+    sending_queue:
+      enabled: true
+      queue_size: 5000
+    retry_on_failure:
+      enabled: true
+
+service:
+  extensions: [health_check]
+  pipelines:
+    metrics:
+      receivers: [hostmetrics, docker_stats]
+      processors: [resourcedetection, resource, batch]
+      exporters: [otlphttp]
+    logs:
+      receivers: [journald]
+      processors: [resourcedetection, resource, batch]
+      exporters: [otlphttp]

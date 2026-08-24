@@ -1,4 +1,17 @@
 [tools]
+azure-cli = { version = "2.88.0", uvx_args = "--prerelease=allow" }
+python = "3.14.6"
+uv = "0.12.1"
 
 [settings]
 pin = true
+
+[env]
+_.file = ".env"
+AZURE_TENANT_ID = "dd114501-3212-46b0-9b66-2f8e0bf94f22"
+AKV_VAULT_NAME = "bde-dev-kv-homelab"
+CLIENT_ID = "207b037b-896e-4c6e-ad2e-1671ee0b34ea"
+OTEL_ENDPOINT = "https://otel.bde-dev.net"
+
+[task_config]
+includes = ["tasks"]

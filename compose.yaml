@@ -1,0 +1,24 @@
+# Stateless workstation OTel collector. `docker compose up -d` after
+# `mise run pull-secrets` has populated .env. Nothing is persisted locally; the
+# /host mount is read-only and feeds both hostmetrics and the journald kernel-log
+# chroot.
+services:
+  otelcol:
+    image: otel/opentelemetry-collector-contrib:0.157.0
+    container_name: workstation-otelcol
+    restart: unless-stopped
+    # Root + read-only host rootfs is required for the journald chroot to run the
+    # host's journalctl. Not privileged; the mount is :ro.
+    user: "0:0"
+    command: ["--config=/etc/otelcol/config.yaml"]
+    volumes:
+      - /:/host:ro
+      - /var/run/docker.sock:/var/run/docker.sock:ro
+      - ./config.yaml:/etc/otelcol/config.yaml:ro
+    environment:
+      OTEL_ENDPOINT: ${OTEL_ENDPOINT:-https://otel.bde-dev.net}
+      # Shell env wins over .env (Compose precedence), matching the
+      # shell-export-first convention. Fail loud if the CF token isn't present.
+      CF_ACCESS_CLIENT_ID: ${CF_ACCESS_CLIENT_ID:?run 'mise run pull-secrets' first}
+      CF_ACCESS_CLIENT_SECRET: ${CF_ACCESS_CLIENT_SECRET:?run 'mise run pull-secrets' first}
+      WORKSTATION_NAME: ${WORKSTATION_NAME:-}
