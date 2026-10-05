@@ -11,6 +11,10 @@ services:
     # host's journalctl. Not privileged; the mount is :ro.
     user: "0:0"
     command: ["--config=/etc/otelcol/config.yaml"]
+    # OTLP/HTTP for apps on this workstation. Loopback only: nothing off-host
+    # can reach the receiver.
+    ports:
+      - "127.0.0.1:4318:4318"
     volumes:
       - /:/host:ro
       - /var/run/docker.sock:/var/run/docker.sock:ro

@@ -59,3 +59,7 @@ docker compose up -d
 Secrets reach the host through the same mise + Azure Key Vault flow as the
 management cluster. `.env` is gitignored; only `.env.example` (keys, no values) is
 tracked. Shell-exported values take precedence over `.env`.
+
+## App telemetry on this workstation
+
+The collector also receives OTLP/HTTP from apps running on the same workstation, published on `127.0.0.1:4318` only, so nothing off-host can reach it. Browser-hosted apps preflight the OTLP POST, so the receiver answers CORS for the allowed app origins listed under `receivers.otlp.protocols.http.cors` in `config.yaml`; add an origin there rather than widening to `*`. App traces and metrics go through their own pipelines (`traces/apps`, `metrics/apps`) so the app's own `service.name` survives; the collector only tags them with `source=workstation` and the workstation name.

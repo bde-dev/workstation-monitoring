@@ -9,6 +9,20 @@ extensions:
     endpoint: 0.0.0.0:13133
 
 receivers:
+  # App telemetry from this workstation. Browser-hosted apps preflight the OTLP
+  # POST, so the receiver answers CORS for the listed app origins only; the port
+  # is published on host loopback in compose.yaml.
+  otlp:
+    protocols:
+      http:
+        endpoint: 0.0.0.0:4318
+        cors:
+          allowed_origins:
+            - http://localhost:5173
+            - http://127.0.0.1:5173
+          allowed_headers: ["*"]
+          max_age: 7200
+
   hostmetrics:
     root_path: /host
     collection_interval: 30s
@@ -74,6 +88,16 @@ processors:
         value: workstation-${env:WORKSTATION_NAME}
         action: upsert
 
+  # App pipelines keep the app's own service.name; only tag where it ran.
+  resource/apps:
+    attributes:
+      - key: source
+        value: workstation
+        action: insert
+      - key: workstation
+        value: ${env:WORKSTATION_NAME}
+        action: upsert
+
   # Keep batches well under Cloudflare's 100MB edge body cap; gzip on the exporter
   # compresses the wire further.
   batch:
@@ -104,4 +128,12 @@ service:
     logs:
       receivers: [journald]
       processors: [resourcedetection, resource, batch]
+      exporters: [otlphttp]
+    traces/apps:
+      receivers: [otlp]
+      processors: [resourcedetection, resource/apps, batch]
+      exporters: [otlphttp]
+    metrics/apps:
+      receivers: [otlp]
+      processors: [resourcedetection, resource/apps, batch]
       exporters: [otlphttp]
