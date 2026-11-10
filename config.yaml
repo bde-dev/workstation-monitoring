@@ -137,3 +137,7 @@ service:
       receivers: [otlp]
       processors: [resourcedetection, resource/apps, batch]
       exporters: [otlphttp]
+    logs/apps:
+      receivers: [otlp]
+      processors: [resourcedetection, resource/apps, batch]
+      exporters: [otlphttp]
